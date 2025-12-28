@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 buildVer="1.2.80.349.g2efc88b5"
-
+0u62;4;22;28;52c
 command -v perl >/dev/null || { echo -e "\n${red}Error:${clr} perl command not found.\nInstall perl on your system then try again.\n" >&2; exit 1; }
 
 case $(uname | tr '[:upper:]' '[:lower:]') in
@@ -408,7 +408,6 @@ check_write_permission() {
   for path in "${paths[@]}"; do
     local path="${path}"
     [[ ! -w "${path}" ]] && {
-      # Detect privilege escalation command if not already set
       if [[ -z "${PRIV_CMD}" ]]; then
         if command -v sudo &> /dev/null; then
           if [[ -L "$(command -v sudo)" ]] && [[ "$(readlink -f "$(command -v sudo)")" == *"doas"* ]]; then
@@ -424,7 +423,6 @@ check_write_permission() {
         fi
       fi
 
-      # Request privileges based on the command
       if [[ "${PRIV_CMD}" == "sudo" ]]; then
         sudo -n true 2>/dev/null || {
           echo -e "${yellow}Warning:${clr} SpotX-Bash does not have write permission in client directory.\nRequesting sudo permission..." >&2
@@ -513,9 +511,7 @@ run_interactive_check() {
 }
 
 sudo_check() {
-  # Detect privilege escalation command (sudo or doas)
   if command -v sudo &> /dev/null; then
-    # Check if sudo is a symlink to doas
     if [[ -L "$(command -v sudo)" ]] && [[ "$(readlink -f "$(command -v sudo)")" == *"doas"* ]]; then
       PRIV_CMD="doas"
     else
@@ -528,7 +524,6 @@ sudo_check() {
     exit 1
   fi
 
-  # Check/request privileges
   if [[ "${PRIV_CMD}" == "sudo" ]]; then
     sudo -n true &> /dev/null || {
       echo -e "This script requires sudo permission to install the client.\nPlease enter your sudo password..."
@@ -538,7 +533,6 @@ sudo_check() {
       }
     }
   else
-    # doas doesn't have -n or -v flags, so we just test with a simple command
     doas true &> /dev/null || {
       echo -e "This script requires doas permission to install the client.\nPlease enter your doas password..."
       doas true || {
