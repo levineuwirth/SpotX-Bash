@@ -408,14 +408,39 @@ check_write_permission() {
   for path in "${paths[@]}"; do
     local path="${path}"
     [[ ! -w "${path}" ]] && {
-      sudo -n true 2>/dev/null || {
-        echo -e "${yellow}Warning:${clr} SpotX-Bash does not have write permission in client directory.\nRequesting sudo permission..." >&2
-        sudo -v || {
-          echo -e "\n${red}Error:${clr} SpotX-Bash was not given sudo permission. Exiting...\n" >&2
+      # Detect privilege escalation command if not already set
+      if [[ -z "${PRIV_CMD}" ]]; then
+        if command -v sudo &> /dev/null; then
+          if [[ -L "$(command -v sudo)" ]] && [[ "$(readlink -f "$(command -v sudo)")" == *"doas"* ]]; then
+            PRIV_CMD="doas"
+          else
+            PRIV_CMD="sudo"
+          fi
+        elif command -v doas &> /dev/null; then
+          PRIV_CMD="doas"
+        else
+          echo -e "\n${red}Error:${clr} Neither sudo nor doas command found. Install sudo/doas or run this script as root.\n" >&2
+          exit 1
+        fi
+      fi
+
+      # Request privileges based on the command
+      if [[ "${PRIV_CMD}" == "sudo" ]]; then
+        sudo -n true 2>/dev/null || {
+          echo -e "${yellow}Warning:${clr} SpotX-Bash does not have write permission in client directory.\nRequesting sudo permission..." >&2
+          sudo -v || {
+            echo -e "\n${red}Error:${clr} SpotX-Bash was not given sudo permission. Exiting...\n" >&2
+            exit 1
+          }
+        }
+      else
+        echo -e "${yellow}Warning:${clr} SpotX-Bash does not have write permission in client directory.\nRequesting doas permission..." >&2
+        doas true || {
+          echo -e "\n${red}Error:${clr} SpotX-Bash was not given doas permission. Exiting...\n" >&2
           exit 1
         }
-      }
-      sudo chmod -R a+wr "${appPath}"
+      fi
+      ${PRIV_CMD} chmod -R a+wr "${appPath}"
     }
   done
 }
@@ -488,17 +513,40 @@ run_interactive_check() {
 }
 
 sudo_check() {
-  command -v sudo &> /dev/null || { 
-    echo -e "\n${red}Error:${clr} sudo command not found. Install sudo or run this script as root.\n" >&2
+  # Detect privilege escalation command (sudo or doas)
+  if command -v sudo &> /dev/null; then
+    # Check if sudo is a symlink to doas
+    if [[ -L "$(command -v sudo)" ]] && [[ "$(readlink -f "$(command -v sudo)")" == *"doas"* ]]; then
+      PRIV_CMD="doas"
+    else
+      PRIV_CMD="sudo"
+    fi
+  elif command -v doas &> /dev/null; then
+    PRIV_CMD="doas"
+  else
+    echo -e "\n${red}Error:${clr} Neither sudo nor doas command found. Install sudo/doas or run this script as root.\n" >&2
     exit 1
-  }
-  sudo -n true &> /dev/null || {
-    echo -e "This script requires sudo permission to install the client.\nPlease enter your sudo password..."
-    sudo -v || { 
-      echo -e "\n${red}Error:${clr} Failed to obtain sudo permission. Exiting...\n" >&2
-      exit 1
+  fi
+
+  # Check/request privileges
+  if [[ "${PRIV_CMD}" == "sudo" ]]; then
+    sudo -n true &> /dev/null || {
+      echo -e "This script requires sudo permission to install the client.\nPlease enter your sudo password..."
+      sudo -v || {
+        echo -e "\n${red}Error:${clr} Failed to obtain sudo permission. Exiting...\n" >&2
+        exit 1
+      }
     }
-  }
+  else
+    # doas doesn't have -n or -v flags, so we just test with a simple command
+    doas true &> /dev/null || {
+      echo -e "This script requires doas permission to install the client.\nPlease enter your doas password..."
+      doas true || {
+        echo -e "\n${red}Error:${clr} Failed to obtain doas permission. Exiting...\n" >&2
+        exit 1
+      }
+    }
+  fi
 }
 
 linux_working_dir() { [[ -d "/tmp" ]] && workDir="/tmp" || workDir="$HOME"; }
@@ -510,16 +558,16 @@ linux_deb_install() {
   lc02=$(echo "9ADSJdTRElEMsdUZsJUePlXWpB1ZJlmYjJ1VaNHbXlVbCNkWolzRiVHZzI2aCNEZ1Z1VhNnTFlUOKhkYqRHSKZTSzIWeKhlU5I1ValHdIpUd4xWSnV1VMdGOHFmaWdUS3I0QmhjQplUMJdVW5R2RKlWQplUOKhVWXZ1RiBnWyU2a4MlZ5x2RSJnSzI2M0hkSpFUeiRXQT50Zr52YwYVbjRHMDlEdBlXU0FUaaRXQpNGaKdFT65EWalHZyIWeChFT0F0UjRXQDJWeWNTW" | rev | base64 --decode | base64 --decode)
   eval "${lc01}"; eval "${lc02}"
   printf "\xE2\x9C\x94\x20\x44\x6F\x77\x6E\x6C\x6F\x61\x64\x65\x64\x20\x61\x6E\x64\x20\x69\x6E\x73\x74\x61\x6C\x6C\x69\x6E\x67\x20\x53\x70\x6F\x74\x69\x66\x79\n"
-  [[ -f "${appBak}" ]] && sudo rm "${appBak}" 2>/dev/null
-  [[ -f "${xpuiBak}" ]] && sudo rm "${xpuiBak}" 2>/dev/null
-  [[ -d "${xpuiDir}" ]] && sudo rm -rf "${xpuiDir}" 2>/dev/null
-  sudo dpkg -i "${workDir}/${fileVar}" &>/dev/null || {
-    sudo apt-get -f install -y &>/dev/null || {
+  [[ -f "${appBak}" ]] && ${PRIV_CMD} rm "${appBak}" 2>/dev/null
+  [[ -f "${xpuiBak}" ]] && ${PRIV_CMD} rm "${xpuiBak}" 2>/dev/null
+  [[ -d "${xpuiDir}" ]] && ${PRIV_CMD} rm -rf "${xpuiDir}" 2>/dev/null
+  ${PRIV_CMD} dpkg -i "${workDir}/${fileVar}" &>/dev/null || {
+    ${PRIV_CMD} apt-get -f install -y &>/dev/null || {
       rm "${workDir}/${fileVar}" 2>/dev/null
       echo -e "\n${red}Error:${clr} Failed to install missing dependencies. Exiting...\n" >&2
       exit 1
     }
-  } && sudo dpkg -i "${workDir}/${fileVar}" &>/dev/null || {
+  } && ${PRIV_CMD} dpkg -i "${workDir}/${fileVar}" &>/dev/null || {
     rm "${workDir}/${fileVar}" 2>/dev/null
     echo -e "\n${red}Error:${clr} Client install failed. Exiting...\n" >&2
     exit 1
